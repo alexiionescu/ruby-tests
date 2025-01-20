@@ -79,7 +79,7 @@ loop do
   test_idx = 0
   YAML.safe_load(erb_res, symbolize_names: true).fetch(:tests).each do |test|
     test_idx += 1
-    puts "#{test[:name]}: DEBUG skip" if test[:debug]
+    # puts "#{test[:name]}: DEBUG skip" if test[:debug]
     next if test_idx <= reload_idx
 
     reload_idx = -1
@@ -96,10 +96,14 @@ loop do
       sleep_after = test.fetch(:sleep_after, 0)
       uri = URI(session_url)
       puts "#{Time.now.strftime '%H:%M:%S.%L'} #{test[:name]}: Session Start"
-      stats = { 'name' => test[:name], 'http errors' => 0, 'api errors' => 0, 'success' => 0 }
-      Net::HTTP.start(uri.hostname, uri.port, { use_ssl: uri.scheme == 'https' }) do |http|
-        start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
+      stats = { 'name' => test[:name], 'http errors' => 0, 'api errors' => 0, 'success' => 0, 'timeouts' => 0,
+                'rps' => 0 }
+      session_params = { use_ssl: uri.scheme == 'https' }
+      session_params[:read_timeout] = test[:read_timeout]
+      Net::HTTP.start(uri.hostname, uri.port, session_params) do |http|
+        duration_sum = 0
         iters.times do
+          start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
           response = http.send(method, test[:request][:path], test[:request][:body].to_json,
                                'Content-Type' => 'application/json')
           if response.code != '200'
@@ -114,12 +118,15 @@ loop do
             puts "DEBUG Response Body => #{response.body}" if test[:debug]
             puts "#{Time.now.strftime '%H:%M:%S.%L'} #{test[:name]}: OK" unless test.dig(:response, :disable_output)
           end
+          duration_sum += Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond) - start_time
           sleep sleep_after
+        rescue Net::ReadTimeout
+          stats['timeouts'] += 1
         end
-        stop_time = Process.clock_gettime(Process::CLOCK_MONOTONIC, :nanosecond)
-        stats['duration (s)'] = format('%.3f', (stop_time - start_time) / 1_000_000_000.0)
-        stats['rps'] = iters * 1_000_000_000 / (stop_time - start_time)
+        stats['avg duration (s)'] = format('%.3f', duration_sum / iters / 1_000_000_000.0)
+        stats['rps'] = iters / (duration_sum / 1_000_000_000.0 + iters * sleep_after) if duration_sum.positive?
         all_stats << stats
+        puts "#{Time.now.strftime '%H:%M:%S.%L'} #{test[:name]}: Session End"
       end
     else
       uri = URI(test[:request][:url])

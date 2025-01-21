@@ -23,6 +23,7 @@ OptionParser.new do |opt|
   opt.on('-c', 'generate clears from tap_TEMPLATE_clear.txt') { |o| options[:clear] = o }
   opt.on('-h', '--host=HOST', 'destination ip/host') { |o| options[:host] = o }
   opt.on('-p', '--port=PORT', 'destination port') { |o| options[:port] = o }
+  opt.on('--page=PAGE', '<PAGE> to replace in template files, default "Button"') { |o| options[:page] = o }
   # opt.on('--protocol=PROTO', 'Protocol: UDP, default is UDP') { |o| options[:proto] = o }
 end.parse!
 
@@ -52,8 +53,8 @@ if options[:clear]
 end
 
 udp_socket = UDPSocket.new
-def send_line(udp_socket, line, dev)
-  msg = "#{line.sub('<DEV>', dev)}\r"
+def send_line(udp_socket, line, dev, options)
+  msg = "#{line.sub('<DEV>', dev).sub('<PAGE>', options.fetch(:page, 'Button'))}\r"
   puts "#{Time.now.strftime '%H:%M:%S.%L'} >> #{msg}"
   udp_socket.send(msg, 0)
 end
@@ -63,11 +64,11 @@ options[:repeat].times do
   options[:devs].each do |dev|
     options[:steps].times do
       a_lines.each do |line|
-        send_line(udp_socket, line, dev)
+        send_line(udp_socket, line, dev, options)
       end
       sleep options[:a_pause] unless a_lines.empty?
       c_lines.each do |line|
-        send_line(udp_socket, line, dev)
+        send_line(udp_socket, line, dev, options)
       end
       sleep options[:c_pause] unless c_lines.empty?
     end

@@ -49,3 +49,4 @@ end
 
 tcex = TestModule::TestEx.new.test(5).test(2)
 tcex.new_test
+puts "Static Method: #{Test1.static_name}"

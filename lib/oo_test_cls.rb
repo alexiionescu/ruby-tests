@@ -30,6 +30,12 @@ class Test1
   def self.tests
     @@tests
   end
+  # another way to add static functions
+  class << self
+    def static_name
+      'TEST NAME'
+    end
+  end
 end
 
 class TestChild1 < Test1

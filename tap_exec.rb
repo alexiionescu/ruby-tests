@@ -7,6 +7,7 @@ options = {
   a_pause: 0.5,
   c_pause: 0.5,
   repeat: 1,
+  repeat_pause: 0,
   steps: 1
 }
 
@@ -17,6 +18,7 @@ OptionParser.new do |opt|
   opt.on('-s', '--start-dev=DEV', Integer, 'device number to start') { |o| options[:s_dev] = o }
   opt.on('-e', '--end-dev=DEV', Integer, 'device number to end') { |o| options[:e_dev] = o }
   opt.on('-r', '--repeat=CNT', Integer, 'repeat sequence count') { |o| options[:repeat] = o }
+  opt.on('-P', '--repeat-pause=CNT', Integer, 'repeat sequence count') { |o| options[:repeat_pause] = o }
   opt.on('--steps=CNT', Integer, 'steps repeat count') { |o| options[:steps] = o }
   opt.on('--devs=DEV', Array, 'devices list') { |o| options[:devs] = o }
   opt.on('-a', 'generate alarms from tap_TEMPLATE_alarm.txt') { |o| options[:alarm] = o }
@@ -60,7 +62,8 @@ def send_line(udp_socket, line, dev, options)
 end
 
 udp_socket.connect(options[:host], options[:port])
-options[:repeat].times do
+options[:repeat].times do |idx|
+  puts "--- Iter #{idx + 1} ---"
   options[:devs].each do |dev|
     options[:steps].times do
       a_lines.each do |line|
@@ -73,4 +76,8 @@ options[:repeat].times do
       sleep options[:c_pause] unless c_lines.empty?
     end
   end
+  sleep options[:repeat_pause]
+rescue Interrupt
+  puts 'Interrupted. Exiting...'
+  break
 end

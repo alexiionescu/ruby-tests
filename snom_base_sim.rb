@@ -109,7 +109,7 @@ def prepare_job_response(dst, eid, status)
   end
 end
 
-def process_request(xml, udp_socket) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity,Metrics/MethodLength
+def process_request(xml, udp_socket, dects) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity,Metrics/MethodLength
   status = xml.xpath('//request//jobdata//status').map(&:text)
   dst = xml.xpath('//request//persondata//address').map(&:text)
   eid = xml.xpath('//request//externalid').map(&:text)
@@ -118,33 +118,88 @@ def process_request(xml, udp_socket) # rubocop:disable Metrics/AbcSize,Metrics/C
   return if msg_text.empty? || sid.empty? || eid.empty? || dst.empty?
 
   s = status[0].to_i
-  if s == STATUS_INITIATED
-    puts "#{Time.now.strftime '%H:%M:%S.%L'} #{dst[0]}\tEid:#{eid[0]}\tSid:#{sid[0]}\tShow #{msg_text[0]}"
-  elsif s == STATUS_CANCELLED
-    puts "#{Time.now.strftime '%H:%M:%S.%L'} #{dst[0]}\tEid:#{eid[0]}\tSid:#{sid[0]}\t Remove #{msg_text[0]}"
+  sleep 0.2
+  if dects.busy?
+    res_s = STATUS_BUSY
+  else
+    res_s = STATUS_DELIVERED
+    dects.add_job(JobData.new(dst[0], eid[0]))
   end
-  response = prepare_response(dst[0], eid[0], STATUS_DELIVERED)
+  response = prepare_response(dst[0], eid[0], res_s)
   udp_socket.send(response.to_xml, 0)
-  sleep 0.6
-  response = prepare_job_response(dst[0], eid[0], STATUS_DELIVERED)
-  udp_socket.send(response.to_xml, 0)
+  puts "#{Time.now.strftime '%H:%M:%S.%L'} #{dst[0]} Eid:#{eid[0]} Sid:#{sid[0]} " +
+       (s == STATUS_INITIATED ? 'Show ' : 'Clear') +
+       (res_s == STATUS_DELIVERED ? " RS:Deliver\t" : " RS:Busy\t") +
+       msg_text[0]
 end
 
-send_status = true
+## JobData class
+class JobData
+  attr_accessor :dst, :eid, :time
+
+  def initialize(dst, eid)
+    @dst = dst
+    @eid = eid
+    @time = Time.now
+  end
+
+  def response(status, duration)
+    sleep 0.1 while elapsed < duration
+    prepare_job_response(@dst, @eid, status)
+  end
+
+  def elapsed
+    Time.now - @time
+  end
+end
+
+## JobProcessing class
+class JobProcessing
+  def initialize(socket)
+    @job_queue = Thread::Queue.new
+    @socket = socket
+  end
+
+  def add_job(job)
+    @job_queue << job
+  end
+
+  def busy?
+    @job_queue.size > 1
+  end
+
+  def process_job(job)
+    @socket.send(job.response(STATUS_DELIVERED, 0.8).to_xml, 0)
+    puts "#{Time.now.strftime '%H:%M:%S.%L'} #{job.dst} Eid:#{job.eid} RJ:Delivered Elapsed: #{job.elapsed}"
+  end
+
+  def start
+    @job_thread = Thread.new do
+      loop do
+        job = @job_queue.pop
+        process_job(job)
+      end
+    end
+  end
+end
+
+dects = JobProcessing.new(udp_socket)
+dects.start
+send_status = nil
 loop do
-  if send_status
+  if send_status.nil? || send_status - Time.now > 60
     status_report = prepare_request(options)
     udp_socket.send(status_report.to_xml, 0)
-    send_status = false
+    send_status = Time.now
   end
   Timeout.timeout(60) do
     response, _addr = udp_socket.recvfrom(1024)
     xml_res = Nokogiri::XML response
     request = xml_res.xpath('//request')
-    process_request(request[0], udp_socket) unless request.empty?
+    process_request(request[0], udp_socket, dects) unless request.empty?
   end
 rescue Timeout::Error
-  send_status = true
+  send_status = nil
 rescue Interrupt
   puts 'Interrupted. Exiting...'
   break

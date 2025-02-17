@@ -68,6 +68,22 @@ def send_line(udp_socket, line, dev, options)
   udp_socket.send(msg, 0)
 end
 
+def send_seq(udp_socket, lines, seq_data, options) # rubocop:disable Metrics/MethodLength
+  seq_data_s, seq_data_e = seq_data.split('-').map(&:to_i) if seq_data
+  if seq_data_e
+    (seq_data_s..seq_data_e).each do |dev|
+      lines.each do |line|
+        send_line(udp_socket, line, dev.to_s, options)
+      end
+    end
+  else
+    lines.each do |line|
+      send_line(udp_socket, line, seq_data, options)
+    end
+  end
+end
+
+rng = Random.new
 udp_socket.connect(options[:host], options[:port])
 options[:repeat].times do |idx| # rubocop:disable Metrics/BlockLength
   options[:devs].each do |dev|
@@ -89,18 +105,21 @@ options[:repeat].times do |idx| # rubocop:disable Metrics/BlockLength
       options[:seq].each do |seq|
         seq_type, seq_data = seq.split(':')
         # puts "Seq: #{seq_type} #{seq_data}"
+        break unless seq_data
+
         case seq_type
         when 'a'
-          a_lines.each do |line|
-            send_line(udp_socket, line, seq_data, options)
-          end
+          send_seq(udp_socket, a_lines, seq_data, options)
         when 'c'
-          c_lines.each do |line|
-            send_line(udp_socket, line, seq_data, options)
-          end
+          send_seq(udp_socket, c_lines, seq_data, options)
         when 'w'
           # puts "Wait #{seq_data} seconds"
-          sleep seq_data.to_f
+          seq_data_s, seq_data_e = seq_data.split('-').map(&:to_f) if seq_data
+          if seq_data_e
+            sleep rng.rand(seq_data_s...seq_data_e)
+          else
+            sleep seq_data.to_f
+          end
         end
       end
     end

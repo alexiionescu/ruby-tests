@@ -16,6 +16,7 @@ OptionParser.new do |opt|
   opt.on('-i', '--include=GLOB_PATTERNS', Array, 'glob patterns to include in each sync') do |o|
     options[:glob_patterns] = o
   end
+  opt.on('-n', '--dry-run', 'dry run, no modifications are made') { |o| options[:dry_run] = o }
 end.parse!
 
 required_options = %i[src_base dst_base glob_patterns]
@@ -37,25 +38,25 @@ stats = {
   sync_dst_to_src: 0
 }
 
-def sync_file(fname, src_file, dst_file, stats) # rubocop:disable Metrics/AbcSize,Metrics/MethodLength,Metrics/PerceivedComplexity
+def sync_file(fname, src_file, dst_file, stats, dry_run) # rubocop:disable Metrics/AbcSize,Metrics/MethodLength,Metrics/PerceivedComplexity,Metrics/CyclomaticComplexity
   return unless File.exist?(src_file) && File.exist?(dst_file)
 
   if File.mtime(src_file) > (File.mtime(dst_file))
     if FileUtils.identical?(src_file, dst_file)
-      File.utime(File.mtime(src_file), File.mtime(src_file), dst_file)
+      File.utime(File.mtime(src_file), File.mtime(src_file), dst_file) unless dry_run
       stats[:time_modified] += 1
     else
       puts "#{fname}: #{File.mtime(src_file)} > #{File.mtime(dst_file)}"
-      FileUtils.cp(src_file, dst_file)
+      FileUtils.cp(src_file, dst_file) unless dry_run
       stats[:sync_src_to_dst] += 1
     end
   elsif File.mtime(src_file) < File.mtime(dst_file)
     if FileUtils.identical?(src_file, dst_file)
-      File.utime(File.mtime(dst_file), File.mtime(dst_file), src_file)
+      File.utime(File.mtime(dst_file), File.mtime(dst_file), src_file) unless dry_run
       stats[:time_modified] += 1
     else
       puts "#{fname}: #{File.mtime(src_file)} < #{File.mtime(dst_file)}"
-      FileUtils.cp(dst_file, src_file)
+      FileUtils.cp(dst_file, src_file) unless dry_run
       stats[:sync_dst_to_src] += 1
     end
   end
@@ -64,14 +65,18 @@ end
 options[:src_dirs].each_with_index do |src_dir, idx|
   base_src_folder = File.join(options[:src_base], src_dir)
   base_dst_folder = File.join(options[:dst_base], options[:dst_dirs][idx])
-  puts "SYNC: #{options[:glob_patterns][idx]} : #{base_src_folder} -> #{base_dst_folder}"
+  if options[:dry_run]
+    puts "DRY-RUN: #{options[:glob_patterns][idx]} : #{base_src_folder} -> #{base_dst_folder}"
+  else
+    puts "SYNC: #{options[:glob_patterns][idx]} : #{base_src_folder} -> #{base_dst_folder}"
+  end
   Dir.glob(options[:glob_patterns][idx], base: base_src_folder) do |fname|
     src_file = File.join(base_src_folder, fname)
     dst_file = File.join(base_dst_folder, fname)
-    sync_file(fname, src_file, dst_file, stats)
+    sync_file(fname, src_file, dst_file, stats, options[:dry_run])
   end
 end
 
-puts "Sync src to dst #{stats[:sync_src_to_dst]}"
-puts "Sync dst to src #{stats[:sync_dst_to_src]}"
-puts "Time Modified: #{stats[:time_modified]}"
+puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} content src to dst: #{stats[:sync_src_to_dst]}"
+puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} content dst to src: #{stats[:sync_dst_to_src]}"
+puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} time: #{stats[:time_modified]}"

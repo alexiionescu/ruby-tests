@@ -4,6 +4,7 @@ require 'optparse'
 require 'nokogiri'
 require 'socket'
 require 'timeout'
+require 'set'
 
 options = {
   port: 1300,
@@ -44,6 +45,16 @@ STATUS_ACCEPTED = 4
 STATUS_REJECTED = 5
 STATUS_CANCELLED = 10
 STATUS_NOT_REACHABLE = 11
+
+STATUS_STR = {
+  STATUS_INITIATED => 'Show     ',
+  STATUS_DELIVERED => 'Delivered',
+  STATUS_ACCEPTED => 'Accept   ',
+  STATUS_REJECTED => 'Reject   ',
+  STATUS_NOT_REACHABLE => 'Unreached',
+  STATUS_BUSY => 'Busy     ',
+  STATUS_CANCELLED => 'Cleared  '
+}.freeze
 
 def prepare_systemdata(xml)
   xml.systemdata do
@@ -109,6 +120,10 @@ def prepare_job_response(dst, eid, status)
   end
 end
 
+def time_s
+  Time.now.strftime '%H:%M:%S.%L'
+end
+
 def process_request(xml, udp_socket, dects) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity,Metrics/MethodLength
   status = xml.xpath('//request//jobdata//status').map(&:text)
   dst = xml.xpath('//request//persondata//address').map(&:text)
@@ -123,23 +138,23 @@ def process_request(xml, udp_socket, dects) # rubocop:disable Metrics/AbcSize,Me
     res_s = STATUS_BUSY
   else
     res_s = STATUS_DELIVERED
-    dects.add_job(JobData.new(dst[0], eid[0]))
+    dects.add_job(JobData.new(dst[0], eid[0], sid[0], s, msg_text[0]))
   end
   response = prepare_response(dst[0], eid[0], res_s)
   udp_socket.send(response.to_xml, 0)
-  puts "#{Time.now.strftime '%H:%M:%S.%L'} #{dst[0]} Eid:#{eid[0]} Sid:#{sid[0]} " +
-       (s == STATUS_INITIATED ? 'Show ' : 'Clear') +
-       (res_s == STATUS_DELIVERED ? " RS:Deliver\t" : " RS:Busy\t") +
-       msg_text[0]
+  puts "#{time_s} #{dst[0]} Eid:#{eid[0]} Sid:#{sid[0]} #{STATUS_STR[s]} RS:#{STATUS_STR[s]}\t" + msg_text[0]
 end
 
 ## JobData class
 class JobData
-  attr_accessor :dst, :eid, :time
+  attr_accessor :dst, :eid, :sid, :time, :text, :req_s
 
-  def initialize(dst, eid)
+  def initialize(dst, eid, sid, req_s, text)
     @dst = dst
     @eid = eid
+    @sid = sid
+    @req_s = req_s
+    @text = text
     @time = Time.now
   end
 
@@ -158,6 +173,7 @@ class JobProcessing
   def initialize(socket)
     @job_queue = Thread::Queue.new
     @socket = socket
+    @active_jobs = Set.new
   end
 
   def add_job(job)
@@ -168,16 +184,34 @@ class JobProcessing
     @job_queue.size > 1
   end
 
+  # return true if the job was delivered
   def process_job(job)
-    @socket.send(job.response(STATUS_DELIVERED, 0.8).to_xml, 0)
-    puts "#{Time.now.strftime '%H:%M:%S.%L'} #{job.dst} Eid:#{job.eid} RJ:Delivered Elapsed: #{job.elapsed}"
+    status = STATUS_DELIVERED
+    @socket.send(job.response(status, 0.8).to_xml, 0)
+    puts "#{time_s} #{job.dst} Eid:#{job.eid} Sid:#{job.sid} #{STATUS_STR[job.req_s]} RJ:#{STATUS_STR[status]}" \
+         "\t#{job.text}\tElapsed: #{job.elapsed}"
+    status == STATUS_DELIVERED
   end
 
-  def start
+  def print_active_jobs
+    if @active_jobs.empty?
+      puts 'No Active jobs'
+    else
+      puts "Active jobs #{@active_jobs.join(' ')}"
+    end
+  end
+
+  def start # rubocop:disable Metrics/MethodLength
     @job_thread = Thread.new do
       loop do
         job = @job_queue.pop
-        process_job(job)
+        if process_job(job)
+          if job.req_s == STATUS_CANCELLED
+            print_active_jobs unless @active_jobs.delete?(job.sid).nil?
+          else
+            print_active_jobs unless @active_jobs.add?(job.sid).nil?
+          end
+        end
       end
     end
   end

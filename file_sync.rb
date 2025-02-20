@@ -19,7 +19,8 @@ OptionParser.new do |opt|
   opt.on('-n', '--dry-run', 'dry run, no modifications are made') { |o| options[:dry_run] = o }
   opt.on('--hg-commit=TEXT', "mercurial commit `hg commit -m 'TEXT' --cwd DIR; hg push --cwd DIR`") do |o|
     options[:commit] = o
-    options[:ss] = 'hg'
+    options[:ss] = `which hg`.chop!
+    puts 'ERROR: hg not found !!!' unless options[:ss]
   end
   # opt.on('--git-commit=TEXT', "git commit `git commit -m 'TEXT' --cwd DIR; hg push --cwd DIR`") do |o|
   #   options[:commit] = o
@@ -74,7 +75,7 @@ def sync_file(fname, src_file, dst_file, stats, dry_run) # rubocop:disable Metri
   false
 end
 
-dirs = []
+dirs = Set.new
 options[:src_dirs].each_with_index do |src_dir, idx|
   base_src_folder = File.join(options[:src_base], src_dir)
   base_dst_folder = File.join(options[:dst_base], options[:dst_dirs][idx])
@@ -93,14 +94,16 @@ end
 puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} content src to dst: #{stats[:sync_src_to_dst]}"
 puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} content dst to src: #{stats[:sync_dst_to_src]}"
 puts "#{options[:dry_run] ? 'DRY-RUN' : 'SYNC'} time: #{stats[:time_modified]}"
-if options[:commit] && !dirs.empty?
+if options[:ss] && options[:commit] && !dirs.empty?
   dirs.each do |dir|
+    commit_cmd = "#{options[:ss]} --cwd '#{dir}' commit -m '#{options[:commit]}'"
+    push_cmd = "#{options[:ss]} --cwd '#{dir}' push"
     if options[:dry_run]
-      puts "#{options[:ss]} commit -m '#{options[:commit]}' --cwd '#{dir}'"
-      puts "#{options[:ss]} push --cwd '#{dir}'"
+      puts commit_cmd
+      puts push_cmd
     else
-      `"#{options[:ss]} commit -m '#{options[:commit]}' --cwd '#{dir}'"`
-      `"#{options[:ss]} push --cwd '#{dir}'"`
+      system(commit_cmd)
+      system(push_cmd)
     end
   end
 end

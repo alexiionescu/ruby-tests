@@ -4,7 +4,6 @@ require 'optparse'
 require 'nokogiri'
 require 'socket'
 require 'timeout'
-require 'set'
 
 options = {
   port: 1300,

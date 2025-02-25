@@ -4,8 +4,6 @@ require 'optparse'
 require 'socket'
 
 options = {
-  a_pause: 0.5,
-  c_pause: 0.5,
   repeat: 1,
   repeat_pause: 0,
   steps: 1,
@@ -32,6 +30,7 @@ OptionParser.new do |opt|
   opt.on('-h', '--host=HOST', 'destination ip/host') { |o| options[:host] = o }
   opt.on('-p', '--port=PORT', 'destination port') { |o| options[:port] = o }
   opt.on('--page=PAGE', '<PAGE> to replace in template files, default "Button"') { |o| options[:page] = o }
+  opt.on('-v', 'verbose mode') { |o| options[:verbose] = o }
   # opt.on('--protocol=PROTO', 'Protocol: UDP, default is UDP') { |o| options[:proto] = o }
 end.parse!
 
@@ -39,8 +38,12 @@ required_options = %i[template host port] # same as [:template,:host,:port]
 missing_options = required_options - options.keys
 raise "Missing required options: #{missing_options}" unless missing_options.empty?
 
-if options[:devs].empty? && options[:s_dev] && options[:e_dev]
-  options[:devs] = (options[:s_dev]..options[:e_dev]).to_a.map(&:to_s)
+if options[:devs].empty?
+  if options[:s_dev] && options[:e_dev]
+    options[:devs] = (options[:s_dev]..options[:e_dev]).to_a.map(&:to_s)
+  else
+    options[:devs] << '101'
+  end
 end
 if options[:sequence_file]
   options[:seq] = File.readlines(options[:sequence_file]).map(&:split).flatten
@@ -49,17 +52,23 @@ else
 end
 
 a_lines = []
-if options[:alarm] || !options[:seq].empty?
-  File.readlines("files/tap_#{options[:template]}_alarm.txt").each do |line|
-    a_lines.push(line.strip)
-  end
+File.readlines("files/tap_#{options[:template]}_alarm.txt").each do |line|
+  a_lines.push(line.strip)
 end
+puts ">>> Alarm Lines: #{a_lines}" if options[:verbose]
 c_lines = []
-if options[:clear] || !options[:seq].empty?
-  File.readlines("files/tap_#{options[:template]}_clear.txt").each do |line|
-    c_lines.push(line.strip)
-  end
+File.readlines("files/tap_#{options[:template]}_clear.txt").each do |line|
+  c_lines.push(line.strip)
 end
+puts ">>> Clear Lines: #{c_lines}" if options[:verbose]
+
+options[:seq] << 'a:<DEV>' if options[:alarm]
+options[:seq] << "w:#{options[:a_pause]}" if options[:a_pause]
+options[:seq] << 'c:<DEV>' if options[:clear]
+options[:seq] << "w:#{options[:c_pause]}" if options[:c_pause]
+
+puts ">>> Devs: #{options[:devs]}" if options[:verbose]
+puts ">>> Sequence: #{options[:seq]}" if options[:verbose]
 
 udp_socket = UDPSocket.new
 def send_line(udp_socket, line, dev, options)
@@ -86,39 +95,31 @@ end
 rng = Random.new
 udp_socket.connect(options[:host], options[:port])
 options[:repeat].times do |idx| # rubocop:disable Metrics/BlockLength
-  options[:devs].each do |dev|
-    options[:steps].times do |step|
-      puts "--- Iter #{idx + 1} Step #{step + 1} ---"
-      a_lines.each do |line|
-        send_line(udp_socket, line, dev, options)
-      end
-      sleep options[:a_pause] unless a_lines.empty?
-      c_lines.each do |line|
-        send_line(udp_socket, line, dev, options)
-      end
-      sleep options[:c_pause] unless c_lines.empty?
-    end
-  end
   unless options[:seq].empty?
-    options[:steps].times do |step|
-      puts "--- Seq Iter #{idx + 1} Step #{step + 1} ---"
-      options[:seq].each do |seq|
-        seq_type, seq_data = seq.split(':')
-        # puts "Seq: #{seq_type} #{seq_data}"
-        break unless seq_data
+    options[:devs].each do |dev|
+      options[:steps].times do |step|
+        puts "--- Seq Iter #{idx + 1} Dev '#{dev}' Step #{step + 1} ---"
+        options[:seq].each do |seq|
+          seq_type, seq_data = seq.split(':')
+          break unless seq_data
 
-        case seq_type
-        when 'a'
-          send_seq(udp_socket, a_lines, seq_data, options)
-        when 'c'
-          send_seq(udp_socket, c_lines, seq_data, options)
-        when 'w'
-          # puts "Wait #{seq_data} seconds"
-          seq_data_s, seq_data_e = seq_data.split('-').map(&:to_f) if seq_data
-          if seq_data_e
-            sleep rng.rand(seq_data_s...seq_data_e)
-          else
-            sleep seq_data.to_f
+          seq_data.gsub!('<DEV>', dev)
+          puts ">>> Seq: #{seq_type} #{seq_data}" if options[:verbose]
+          case seq_type
+          when 'a'
+            send_seq(udp_socket, a_lines, seq_data, options)
+          when 'c'
+            send_seq(udp_socket, c_lines, seq_data, options)
+          when 'w'
+            seq_data_s, seq_data_e = seq_data.split('-').map(&:to_f) if seq_data
+            if seq_data_e
+              wait = rng.rand(seq_data_s...seq_data_e)
+              puts ">>> Wait #{seq_data} -> #{wait} seconds" if options[:verbose]
+              sleep wait
+            else
+              puts ">>> Wait #{seq_data} seconds" if options[:verbose]
+              sleep seq_data.to_f
+            end
           end
         end
       end

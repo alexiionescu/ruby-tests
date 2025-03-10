@@ -1,0 +1,17 @@
+[Unit]
+Description=<%= @options[:name] %> <%= ARGV.join(' ') %>
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=<%= @options[:user] %>
+Group=<%= @options[:usergr] %>
+WorkingDirectory=<%= @options[:wdir] %>
+Restart=always
+ExecStart=<%= @options[:ruby] %> <%= ARGV.join(' ') %>
+RestartSec=<%= @options[:restart_after] %>
+SyslogIdentifier=<%= @options[:name] %>
+
+[Install]
+WantedBy=multi-user.target

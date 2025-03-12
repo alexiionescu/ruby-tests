@@ -8,7 +8,7 @@ Type=simple
 User=<%= @options[:user] %>
 Group=<%= @options[:usergr] %>
 WorkingDirectory=<%= @options[:wdir] %>
-Restart=always
+Restart=<%= @options[:restart] %>
 ExecStart=<%= @options[:ruby] %> <%= ARGV.join(' ') %>
 RestartSec=<%= @options[:restart_after] %>
 SyslogIdentifier=<%= @options[:name] %>

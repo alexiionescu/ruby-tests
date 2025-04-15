@@ -22,7 +22,7 @@ OptionParser.new do |opt|
   opt.on('--steps=CNT', Integer, 'steps repeat count') { |o| options[:steps] = o }
   opt.on('-a', 'generate alarms from tap_TEMPLATE_alarm.txt') { |o| options[:alarm] = o }
   opt.on('-c', 'generate clears from tap_TEMPLATE_clear.txt') { |o| options[:clear] = o }
-  opt.on('--devs=DEV', Array, 'devices list') { |o| options[:devs] = o }
+  opt.on('--devs=DEV', Array, 'devices list') { |o| options[:devs] = o.map(&:strip) }
   opt.on('--seq=SEQUENCE', 'sequence of alarm,clear or wait: (a|c):dev|w:<seconds> (e.g. a:101 w:5.5 c:101)') do |o|
     options[:sequence] = o
   end

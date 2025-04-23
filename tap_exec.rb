@@ -71,24 +71,23 @@ puts ">>> Devs: #{options[:devs]}" if options[:verbose]
 puts ">>> Sequence: #{options[:seq]}" if options[:verbose]
 
 udp_socket = UDPSocket.new
-def send_line(udp_socket, line, dev, options)
-  msg = "#{line.sub('<DEV>', dev).sub('<PAGE>', options.fetch(:page, 'Button'))}\r"
+def send_lines(udp_socket, lines, dev, options)
+  msg = ''
+  lines.each do |line|
+    msg << "#{line.sub('<DEV>', dev).sub('<PAGE>', options.fetch(:page, 'Button'))}\r"
+  end
   puts "#{Time.now.strftime '%H:%M:%S.%L'} >> #{msg}"
   udp_socket.send(msg, 0)
 end
 
-def send_seq(udp_socket, lines, seq_data, options) # rubocop:disable Metrics/MethodLength
+def send_seq(udp_socket, lines, seq_data, options)
   seq_data_s, seq_data_e = seq_data.split('-').map(&:to_i) if seq_data
   if seq_data_e
     (seq_data_s..seq_data_e).each do |dev|
-      lines.each do |line|
-        send_line(udp_socket, line, dev.to_s, options)
-      end
+      send_lines(udp_socket, lines, dev.to_s, options)
     end
   else
-    lines.each do |line|
-      send_line(udp_socket, line, seq_data, options)
-    end
+    send_lines(udp_socket, lines, seq_data, options)
   end
 end
 

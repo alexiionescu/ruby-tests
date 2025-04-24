@@ -74,12 +74,12 @@ def prepare_sender_data(xml, devs)
   end
 end
 
-def prepare_request(options)
+def prepare_status(devs)
   Nokogiri::XML::Builder.new do |xml|
     xml.request(version: '24.0.1.1999', type: 'systeminfo') do
       xml.externalid Time.now.to_i
       prepare_systemdata(xml)
-      prepare_sender_data(xml, options[:devs])
+      prepare_sender_data(xml, devs)
     end
   end
 end
@@ -168,11 +168,20 @@ class JobData
 end
 
 ## JobProcessing class
+# This class is responsible for processing jobs
+# - It uses a thread to process jobs in the background
+# - It uses a queue to store jobs
+# - It uses a set to keep track of active jobs
+# - It uses a socket to send responses
+# - It uses a timer to check if the job is still active
+# - It checks if status need to be sent (60 seconds)
 class JobProcessing
-  def initialize(socket)
+  def initialize(socket, devs)
     @job_queue = Thread::Queue.new
     @socket = socket
     @active_jobs = Set.new
+    @send_status = nil
+    @devs = devs
   end
 
   def add_job(job)
@@ -188,7 +197,7 @@ class JobProcessing
     status = STATUS_DELIVERED
     @socket.send(job.response(status, 0.8).to_xml, 0)
     puts "#{time_s} #{job.dst} Eid:#{job.eid} Sid:#{job.sid} #{STATUS_STR[job.req_s]} RJ:#{STATUS_STR[status]}" \
-         "\t#{job.text}\tElapsed: #{job.elapsed}"
+         "\t#{job.text}\tElapsed: #{format('%.3f', job.elapsed)}"
     status == STATUS_DELIVERED
   end
 
@@ -214,25 +223,31 @@ class JobProcessing
       end
     end
   end
+
+  def check_send_status
+    return unless @send_status.nil? || Time.now - @send_status >= 60
+
+    status_report = prepare_status(@devs)
+    @socket.send(status_report.to_xml, 0)
+    @send_status = Time.now
+    puts "#{time_s} Status sent"
+  end
 end
 
-dects = JobProcessing.new(udp_socket)
+dects = JobProcessing.new(udp_socket, options[:devs])
 dects.start
-send_status = nil
+
 loop do
-  if send_status.nil? || send_status - Time.now > 60
-    status_report = prepare_request(options)
-    udp_socket.send(status_report.to_xml, 0)
-    send_status = Time.now
-  end
+  dects.check_send_status
   Timeout.timeout(60) do
     response, _addr = udp_socket.recvfrom(1024)
     xml_res = Nokogiri::XML response
     request = xml_res.xpath('//request')
     process_request(request[0], udp_socket, dects) unless request.empty?
+    dects.check_send_status
   end
 rescue Timeout::Error
-  send_status = nil
+  # send status if nothing received for 60 seconds
 rescue Interrupt
   puts 'Interrupted. Exiting...'
   break

@@ -13,8 +13,8 @@ OptionParser.new do |opt|
   opt.on('-d', '--dst-base=DST_BASE', 'destination base dir') { |o| @options[:dst_base] = o }
   opt.on('--src-dirs=SRC_DIRS', Array, 'source directories') { |o| @options[:src_dirs] = o }
   opt.on('--dst-dirs=DST_DIRS', Array, 'destination directories') { |o| @options[:dst_dirs] = o }
-  opt.on('-i', '--include=GLOB_PATTERNS', Array, 'glob patterns to include in each sync') do |o|
-    @options[:glob_patterns] = o
+  opt.on('-i', '--include=GLOB_PATTERNS', String, 'glob patterns to include in each sync') do |o|
+    @options[:glob_patterns] << o
   end
   opt.on('-n', '--dry-run', 'dry run, no modifications are made') { |o| @options[:dry_run] = o }
   opt.on('--copy-new', 'copy src to dst if dst does not exist') { |o| @options[:copy_new] = o }

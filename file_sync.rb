@@ -23,6 +23,9 @@ OptionParser.new do |opt|
     @options[:ss] = `which hg`.chomp!
     puts 'ERROR: hg not found !!!' unless @options[:ss]
   end
+  opt.on('--push', 'push after commit (mercurial only)') do |o|
+    @options[:push] = o
+  end
   # opt.on('--git-commit=TEXT', "git commit `git commit -m 'TEXT' --cwd DIR; hg push --cwd DIR`") do |o|
   #   @options[:commit] = o
   #   @options[:ss] = 'git'
@@ -106,10 +109,10 @@ if @options[:ss] && @options[:commit] && !dirs.empty?
     push_cmd = "#{@options[:ss]} --cwd '#{dir}' push"
     if @options[:dry_run]
       puts commit_cmd
-      puts push_cmd
+      puts push_cmd if @options[:push]
     else
       system(commit_cmd)
-      system(push_cmd)
+      system(push_cmd) if @options[:push]
     end
   end
 end

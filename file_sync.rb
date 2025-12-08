@@ -6,7 +6,8 @@ require 'fileutils'
 @options = {
   src_dirs: (ENV['SYNC_SRC_DIRS'] || '/').split,
   dst_dirs: (ENV['SYNC_DST_DIRS'] || '/').split,
-  glob_patterns: ENV['SYNC_GLOB_PATTERNS'] || []
+  glob_patterns: ENV['SYNC_GLOB_PATTERNS'] || [],
+  glob_patterns_exclude: ENV['SYNC_GLOB_PATTERNS_EXCLUDE'] || []
 }
 OptionParser.new do |opt|
   opt.on('-s', '--src-base=SRC_BASE', 'source base dir') { |o| @options[:src_base] = o }
@@ -15,6 +16,9 @@ OptionParser.new do |opt|
   opt.on('--dst-dirs=DST_DIRS', Array, 'destination directories') { |o| @options[:dst_dirs] = o }
   opt.on('-i', '--include=GLOB_PATTERNS', String, 'glob patterns to include in each sync') do |o|
     @options[:glob_patterns] << o
+  end
+  opt.on('-e', '--exclude=GLOB_PATTERNS', String, 'glob patterns to exclude in each sync') do |o|
+    @options[:glob_patterns_exclude] << o
   end
   opt.on('-n', '--dry-run', 'dry run, no modifications are made') { |o| @options[:dry_run] = o }
   opt.on('--copy-new', 'copy src to dst if dst does not exist') { |o| @options[:copy_new] = o }
@@ -44,6 +48,11 @@ raise 'glob patterns must have a list one element' if @options[:glob_patterns].e
 if @options[:glob_patterns].length < @options[:src_dirs].length
   (@options[:src_dirs].length - @options[:glob_patterns].length).times do
     @options[:glob_patterns].push @options[:glob_patterns].last
+  end
+end
+if @options[:glob_patterns_exclude].length < @options[:src_dirs].length
+  (@options[:src_dirs].length - @options[:glob_patterns_exclude].length).times do
+    @options[:glob_patterns_exclude].push @options[:glob_patterns_exclude]&.last
   end
 end
 
@@ -89,11 +98,16 @@ dirs = Set.new
   base_src_folder = File.join(@options[:src_base], src_dir)
   base_dst_folder = File.join(@options[:dst_base], @options[:dst_dirs][idx])
   if @options[:dry_run]
-    puts "DRY-RUN: #{@options[:glob_patterns][idx]} : #{base_src_folder} -> #{base_dst_folder}"
+    puts "DRY-RUN: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}' : #{base_src_folder} -> #{base_dst_folder}"
   else
-    puts "SYNC: #{@options[:glob_patterns][idx]} : #{base_src_folder} -> #{base_dst_folder}"
+    puts "SYNC: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}' : #{base_src_folder} -> #{base_dst_folder}"
   end
   Dir.glob(@options[:glob_patterns][idx], base: base_src_folder) do |fname|
+    next if !@options[:glob_patterns_exclude][idx].nil? && !@options[:glob_patterns_exclude][idx].empty? &&
+            File.fnmatch(
+              @options[:glob_patterns_exclude][idx], fname
+            )
+
     src_file = File.join(base_src_folder, fname)
     dst_file = File.join(base_dst_folder, fname)
     dirs << base_dst_folder if sync_file(fname, src_file, dst_file)

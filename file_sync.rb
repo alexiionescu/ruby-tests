@@ -98,14 +98,18 @@ dirs = Set.new
   base_src_folder = File.join(@options[:src_base], src_dir)
   base_dst_folder = File.join(@options[:dst_base], @options[:dst_dirs][idx])
   if @options[:dry_run]
-    puts "DRY-RUN: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}' : #{base_src_folder} -> #{base_dst_folder}"
+    puts "DRY-RUN: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}'" \
+        " : #{base_src_folder.gsub(@options[:src_base], '$SRC')}" \
+        " -> #{base_dst_folder.gsub(@options[:dst_base], '$DST')}"
   else
-    puts "SYNC: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}' : #{base_src_folder} -> #{base_dst_folder}"
+    puts "SYNC: include '#{@options[:glob_patterns][idx]}' exclude '#{@options[:glob_patterns_exclude][idx]}'" \
+        " : #{base_src_folder.gsub(@options[:src_base], '$SRC')}" \
+        " -> #{base_dst_folder.gsub(@options[:dst_base], '$DST')}"
   end
   Dir.glob(@options[:glob_patterns][idx], base: base_src_folder) do |fname|
     next if !@options[:glob_patterns_exclude][idx].nil? && !@options[:glob_patterns_exclude][idx].empty? &&
             File.fnmatch(
-              @options[:glob_patterns_exclude][idx], fname
+              @options[:glob_patterns_exclude][idx], fname, File::FNM_EXTGLOB
             )
 
     src_file = File.join(base_src_folder, fname)

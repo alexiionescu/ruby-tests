@@ -15,8 +15,10 @@ class Accumulator
   end
 
   def add(index)
-    @value += @data[index % @data.size]
-    @value %= BIG_PRIME
+    100.times do |i|
+      @value += @data[(index + i) % @data.size]
+      @value %= BIG_PRIME
+    end
   end
 end
 

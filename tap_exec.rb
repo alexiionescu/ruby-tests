@@ -44,6 +44,23 @@ if options[:devs].empty?
   else
     options[:devs] << '101'
   end
+else
+  # expand all dev1..devN to list of devs
+  expanded_devs = []
+  options[:devs].each do |dev|
+    if dev.include?('..')
+      start_dev, end_dev = dev.split('..').map(&:to_i)
+      if end_dev < start_dev
+        # create reverse range if end_dev is less than start_dev
+        expanded_devs.concat((end_dev..start_dev).to_a.reverse.map(&:to_s))
+      else
+        expanded_devs.concat((start_dev..end_dev).to_a.map(&:to_s))
+      end
+    else
+      expanded_devs << dev
+    end
+  end
+  options[:devs] = expanded_devs
 end
 if options[:sequence_file]
   options[:seq] = File.readlines(options[:sequence_file]).map(&:split).flatten

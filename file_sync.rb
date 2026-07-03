@@ -21,6 +21,7 @@ OptionParser.new do |opt|
     @options[:glob_patterns_exclude] << o
   end
   opt.on('-n', '--dry-run', 'dry run, no modifications are made') { |o| @options[:dry_run] = o }
+  opt.on('--show-patch', 'show patch when files differ') { |o| @options[:show_patch] = o }
   opt.on('--copy-new', 'copy src to dst if dst does not exist') { |o| @options[:copy_new] = o }
   opt.on('--hg-commit=TEXT', "mercurial commit `hg commit -m 'TEXT' --cwd DIR; hg push --cwd DIR`") do |o|
     @options[:commit] = o
@@ -62,12 +63,31 @@ end
   sync_dst_to_src: 0
 }
 
+# Compare two files ignoring whitespace at the beginning and end of lines, and ignoring empty lines.
+def compare_src_files_ignore_whitespace?(src_file, dst_file, show_patch) # rubocop:disable Metrics/MethodLength
+  src_content = File.read(src_file).gsub(/^\s+|\s+$/, '')
+  dst_content = File.read(dst_file).gsub(/^\s+|\s+$/, '')
+  if show_patch && src_content != dst_content
+    require 'tempfile'
+    src_temp = Tempfile.new('src')
+    dst_temp = Tempfile.new('dst')
+    src_temp.write(src_content)
+    dst_temp.write(dst_content)
+    src_temp.close
+    dst_temp.close
+    system("diff --strip-trailing-cr --no-ignore-file-name-case -y #{src_temp.path} #{dst_temp.path}")
+    src_temp.unlink
+    dst_temp.unlink
+  end
+  src_content == dst_content
+end
+
 def sync_file(fname, src_file, dst_file) # rubocop:disable Metrics/AbcSize,Metrics/MethodLength,Metrics/PerceivedComplexity,Metrics/CyclomaticComplexity
   is_dst = File.exist?(dst_file)
   return false unless @options[:copy_new] || is_dst
 
-  if !is_dst || File.mtime(src_file) > (File.mtime(dst_file))
-    if is_dst && FileUtils.identical?(src_file, dst_file)
+  if !is_dst || File.mtime(src_file) > File.mtime(dst_file)
+    if is_dst && compare_src_files_ignore_whitespace?(src_file, dst_file, @options[:show_patch])
       File.utime(File.mtime(src_file), File.mtime(src_file), dst_file) unless @options[:dry_run]
       @stats[:time_modified] += 1
     else
@@ -81,7 +101,7 @@ def sync_file(fname, src_file, dst_file) # rubocop:disable Metrics/AbcSize,Metri
       return true
     end
   elsif File.mtime(src_file) < File.mtime(dst_file)
-    if FileUtils.identical?(src_file, dst_file)
+    if compare_src_files_ignore_whitespace?(src_file, dst_file, @options[:show_patch])
       File.utime(File.mtime(dst_file), File.mtime(dst_file), src_file) unless @options[:dry_run]
       @stats[:time_modified] += 1
     else

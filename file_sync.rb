@@ -69,24 +69,11 @@ end
 def compare_src_files_ignore_whitespace?(src_file, dst_file, show_diff)
   src_content = File.read(src_file).gsub(/\s+$/, '')
   dst_content = File.read(dst_file).gsub(/\s+$/, '')
-  compare_content(src_content, dst_content, show_diff) if show_diff && src_content != dst_content
-  src_content == dst_content
-end
-
-def compare_content(src_content, dst_content, show_diff) # rubocop:disable Metrics/MethodLength
-  require 'tempfile'
-  src_temp = Tempfile.new('src')
-  dst_temp = Tempfile.new('dst')
-  src_temp.write(src_content)
-  dst_temp.write(dst_content)
-  src_temp.close
-  dst_temp.close
-  if show_diff == 'patch'
-    system("diff --strip-trailing-cr --no-ignore-file-name-case -y #{src_temp.path} #{dst_temp.path}")
+  if show_diff && src_content != dst_content
+    system("diff --strip-trailing-cr --no-ignore-file-name-case -y #{src_file} #{dst_file}") if show_diff == 'patch'
+    system("code --diff #{src_file} #{dst_file} --wait") if show_diff == 'code'
   end
-  system("code --diff #{src_temp.path} #{dst_temp.path} --wait") if show_diff == 'code'
-  src_temp.unlink
-  dst_temp.unlink
+  src_content == dst_content
 end
 
 def sync_file(fname, src_file, dst_file) # rubocop:disable Metrics/AbcSize,Metrics/MethodLength,Metrics/PerceivedComplexity,Metrics/CyclomaticComplexity

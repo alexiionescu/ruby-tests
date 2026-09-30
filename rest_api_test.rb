@@ -19,10 +19,11 @@ end.parse!
 
 # Class responsible for processing and executing tests defined in a YAML file.
 class TestProcessor
-  attr_accessor :repeat_count
+  attr_accessor :repeat_count, :interrupted
 
   def initialize
     @repeat_count = nil
+    @interrupted = false
   end
   # repeat_count is now an instance variable
 
@@ -79,11 +80,18 @@ class TestProcessor
     end
   end
 
+  def wait_handle_interrupt(time)
+    sleep(time)
+  rescue Interrupt
+    puts "\n*** Interrupted while waiting."
+    @interrupted = true
+  end
+
   def prepare_test(test)
     time = parse_wait_time(test[:wait])
     if time.positive?
       puts "Waiting for #{test[:wait]} (#{time} s) ..."
-      sleep(time)
+      wait_handle_interrupt(time)
     end
     return [nil, nil, process_repeat(test)] unless test[:request]
 
@@ -134,11 +142,18 @@ test_index = 0
 loop do
   break unless test
 
+  # puts "\tDEBUG: Next test index: #{test_index}: #{test[:name]} (allow_interrupt: #{test[:allow_interrupt]})"
+
   next_test = processor.process_test(test)
   break if next_test == NEXT_TEST && test_index >= tests.size - 1
   break if test[:countdown]&.zero?
 
-  # puts "\tDEBUG: Current test index: #{test_index}: Moving to next test '#{next_test}'"
+  if processor.interrupted && test[:allow_interrupt] == true
+    puts "Exiting due to previous interrupt request at test index #{test_index}: #{test[:name]}"
+    break
+  end
+
+  # puts "\tDEBUG: Moving to next test '#{next_test}'"
 
   next unless next_test != REPEAT_TEST
 
@@ -152,5 +167,4 @@ loop do
            test_index = tests.find_index { |t| t[:name] == next_test }
            tests[test_index]
          end
-  # puts "\tDEBUG: Next test index: #{test_index}: #{test[:name]}"
 end
